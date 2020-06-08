@@ -4,15 +4,20 @@ srand 1231
 
 # Any player playing the game
 class Player
-  attr_reader :name
+  attr_reader :name, :type
 
-  def initialize(name = 'Anonymous')
+  def initialize(name = 'Anonymous', type = 'Player')
     self.name = name
+    self.type = type
+  end
+
+  def self.computer(name = "Computer #{rand(1000)}", type = 'Computer')
+    new(name, type)
   end
 
   protected
 
-  attr_writer :name
+  attr_writer :name, :type
 end
 
 # Represents a code
@@ -28,13 +33,13 @@ module Code
     # tally of the count of each unmatched group
     unmatched_tally, attempt_tally = not_exact_match(correct, attempt).map(&:tally)
 
-    # Returns 0 if all 4 matches
+    # Returns 0 if all 4 matches were found
     return 0 unless attempt_tally
 
     # Unmatched adjusted by the attempts
     adjusted_unmatched = unmatched_tally.map do |color, count|
       not_in_attempt = count - (attempt_tally[color] || 0)
-      [color, not_in_attempt < 0 ? 0 : not_in_attempt]
+      [color, not_in_attempt.negative? ? 0 : not_in_attempt]
     end.to_h.values.sum
 
     # Matches found
@@ -60,22 +65,26 @@ end
 module Roles
   # Role is applied to a player temporarilly
   class Role
-    attr_reader :name
+    attr_reader :player
 
-    def initialize(player)
-      self.name = player.name
+    def initialize(player = Player.new)
+      self.player = player
+    end
+
+    def self.computer
+      new(Player.computer)
     end
 
     private
 
-    attr_writer :name
+    attr_writer :player
   end
 
   # Makes the initial code
   class CodeMaker < Role
     attr_reader :code
 
-    def initialize(player)
+    def initialize(player = Player.new)
       super
       create_code
     end
@@ -90,9 +99,9 @@ module Roles
         matches_only_color: Code.matches_except_position(code, attempt)
       }
       if feedback[:matches] == code.size
-        code
+        {success: true, code: code}
       else
-        feedback.values
+        {success: true, feedback: feedback}
       end
     end
 
