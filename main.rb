@@ -16,6 +16,10 @@ class Player
     new(name, type)
   end
 
+  def to_s
+    name
+  end
+
   protected
 
   attr_writer :name, :type
@@ -25,6 +29,7 @@ end
 module Code
   COLORS = Array(0..5)
 
+  # Number of groups that correctly matched
   def self.matches(correct, attempt)
     correct.size - doesnt_match_pairs(correct, attempt).size
   end
@@ -74,7 +79,7 @@ module Roles
           puts
           return code.split('').map(&:to_i)
         else
-          puts 'Wrong format! Try again.'
+          puts "Wrong format! Try again. Your code was #{code}"
           redo
         end
       end
@@ -93,6 +98,10 @@ module Roles
 
     def self.computer
       new(Player.computer)
+    end
+
+    def to_s
+      player.name
     end
 
     private
@@ -155,19 +164,33 @@ module Roles
   end
 end
 
-computer = Roles::CodeMaker.computer
-computer2 = Roles::CodeBreaker.new
+# Initializes a game with players passed through the init method or computers
+class Game
+  attr_reader :players
 
-computer.create_code
-# p computer.create_code
+  def initialize(*players)
+    players.push(Player.computer) while players.size < 2
+    self.players = players
+  end
 
-attempts = 0
-loop do
-  attempts += 1
-  attempt = computer.verify(computer2.attempt)
-  p attempt[:feedback].values unless attempt[:success]
-  break if attempt[:success]
+  def play
+    players.shuffle!
+    codemaker = Roles::CodeMaker.new(players[0])
+    codebreaker = Roles::CodeBreaker.new(players[1])
+    codemaker.create_code
+    attempts = 0
+    loop do
+      attempts += 1
+      attempt = codemaker.verify(codebreaker.attempt)
+      p attempt[:feedback].values unless attempt[:success]
+      break if attempt[:success]
+    end
+    puts "\nSuccess! #{codemaker}'s code was #{codemaker.code}. #{codebreaker} took #{attempts} attempts."
+  end
+
+  private
+
+  attr_writer :players
 end
-p computer.code
-p attempts
-# p computer.verify([0, 5, 5, 0])
+
+Game.new.play
