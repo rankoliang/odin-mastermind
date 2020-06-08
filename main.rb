@@ -160,7 +160,7 @@ module Roles
       super
       self.attempts = []
       self.possible_values = []
-      self.last_attempted_index = 0
+      self.last_attempted_index = -1
     end
 
     def attempt(feedback = [], code_length = 4)
@@ -172,18 +172,17 @@ module Roles
           code_input(code_length)
         else
           # Computer AI
-          code = nil
           if feedback.last && possible_values.size < code_length
-            feedback.last.values.sum.times {possible_values.push(last_attempted_index)} 
+            feedback.last.values.sum.times { possible_values.push(last_attempted_index) }
           end
-          if possible_values.size == code_length
-            code = possible_values.shuffle
-          elsif last_attempted_index < Code::COLORS.size 
-            self.last_attempted_index += 1
-            code = Array.new(code_length, Code::COLORS[last_attempted_index])
-          else
-            code = Code.random_code
-          end
+          code = if possible_values.size == code_length
+                   possible_values.shuffle
+                 elsif last_attempted_index < Code::COLORS.size - 1
+                   self.last_attempted_index += 1
+                   Array.new(code_length, Code::COLORS[last_attempted_index])
+                 else
+                   Code.random_code
+                 end
           p possible_values
           code
         end
