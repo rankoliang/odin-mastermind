@@ -111,7 +111,12 @@ module Roles
 
   # Makes the initial code
   class CodeMaker < Role
-    attr_reader :code
+    attr_reader :code, :all_feedback
+
+    def initialize(player = Player.new)
+      super
+      self.all_feedback = []
+    end
 
     def create_code(code_length = 4)
       # Skips if the CodeMaker already created their code
@@ -134,6 +139,7 @@ module Roles
         matches: Code.matches(code, attempt),
         matches_only_color: Code.matches_except_position(code, attempt)
       }
+      all_feedback.push(feedback)
       if feedback[:matches] == code.size
         { success: true, code: code }
       else
@@ -143,12 +149,21 @@ module Roles
 
     private
 
-    attr_writer :code
+    attr_writer :code, :all_feedback
   end
 
   # Guesses the code
   class CodeBreaker < Role
-    def attempt(code_length = 4)
+    attr_reader :attempts
+
+    def initialize(player = Player.new)
+      super
+      self.attempts = []
+      self.possible_values = []
+      self.last_attempted_index = 0
+    end
+
+    def attempt(feedback = [], code_length = 4)
       puts
       attempt =
         case player.type
@@ -156,11 +171,31 @@ module Roles
           puts "#{player.name} needs to input an attempt."
           code_input(code_length)
         else
-          Code.random_code(code_length)
+          # Computer AI
+          code = nil
+          if feedback.last && possible_values.size < code_length
+            feedback.last.values.sum.times {possible_values.push(last_attempted_index)} 
+          end
+          if possible_values.size == code_length
+            code = possible_values.shuffle
+          elsif last_attempted_index < Code::COLORS.size 
+            self.last_attempted_index += 1
+            code = Array.new(code_length, Code::COLORS[last_attempted_index])
+          else
+            code = Code.random_code
+          end
+          p possible_values
+          code
         end
+      attempts.push(attempt)
       puts "#{player.name} guessed #{attempt}"
       attempt
     end
+
+    private
+
+    attr_writer :attempts
+    attr_accessor :possible_values, :last_attempted_index
   end
 end
 
@@ -173,23 +208,31 @@ class Game
     self.players = players
   end
 
-  def play
-    players.shuffle!
-    codemaker = Roles::CodeMaker.new(players[0])
-    codebreaker = Roles::CodeBreaker.new(players[1])
+  def play(max_attempts = 12)
+    codemaker, codebreaker = assign_roles
     codemaker.create_code
-    attempts = 0
-    loop do
-      attempts += 1
-      attempt = codemaker.verify(codebreaker.attempt)
+    attempts = max_attempts
+    while attempts.positive?
+      attempts -= 1
+      attempt = codemaker.verify(codebreaker.attempt(codemaker.all_feedback))
       p attempt[:feedback].values unless attempt[:success]
-      break if attempt[:success]
+      if attempt[:success]
+        print "\nSuccess! "
+        break
+      end
+      print "\nFailure! " if attempts.zero?
     end
-    puts "\nSuccess! #{codemaker}'s code was #{codemaker.code}. #{codebreaker} took #{attempts} attempts."
+    puts "#{codemaker}'s code was #{codemaker.code}. #{codebreaker} took #{codebreaker.attempts.size} attempts."
+    # p codebreaker.attempts
+    # puts codemaker.all_feedback
   end
 
   private
 
+  def assign_roles
+    randomized_players = players.shuffle!
+    [Roles::CodeMaker.new(randomized_players[0]), Roles::CodeBreaker.new(randomized_players[1])]
+  end
   attr_writer :players
 end
 
