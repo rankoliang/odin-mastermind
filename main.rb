@@ -2,6 +2,19 @@
 
 # Hides guess input
 require 'io/console'
+require 'logger'
+
+# Adds log functionality
+module Loggable
+  class << self
+    attr_accessor :logger
+  end
+end
+
+Loggable.logger = Logger.new(STDOUT)
+Loggable.logger.formatter = proc { |severity, _, _, msg|
+  "#{severity}\t#{msg}\n"
+}
 
 # Any player playing the game
 class Player
@@ -68,18 +81,24 @@ module Code
   end
 end
 
+# module Solver
+#   break_code = lambda do
+
+#   end
+# end
+
 module Roles
   # Manages player input
   module InputManager
     def code_input(code_length = 4)
       1.times do
-        print "Enter a code (#{code_length} digit number with digits between #{Code::COLORS.min} - #{Code::COLORS.max}): "
+        Loggable.logger.info "Enter a code (#{code_length} digit number with digits between #{Code::COLORS.min} - #{Code::COLORS.max}): "
         code = STDIN.noecho(&:gets).chomp
         if /^ *[#{Code::COLORS.min}-#{Code::COLORS.max}]{#{code_length}} *$/.match?(code)
-          puts
+          Loggable.logger.info
           return code.split('').map(&:to_i)
         else
-          puts "Wrong format! Try again. Your code was #{code}"
+          Loggable.logger.info "Wrong format! Try again. Your code was #{code}"
           redo
         end
       end
@@ -122,14 +141,13 @@ module Roles
       # Skips if the CodeMaker already created their code
       return if code
 
-      puts
       self.code =
         case player.type
         when 'Player'
-          puts "#{player.name} needs to create their code."
+          Loggable.logger.info "#{player.name} needs to create their code."
           code_input(code_length)
         else
-          puts "#{player.name} created their code."
+          Loggable.logger.info "#{player.name} created their code."
           Code.random_code(code_length)
         end
     end
@@ -164,37 +182,54 @@ module Roles
     end
 
     def attempt(feedback = [], code_length = 4)
-      puts
+      Loggable.logger.info
       attempt =
         case player.type
         when 'Player'
+          # Player input
           puts "#{player.name} needs to input an attempt."
           code_input(code_length)
         else
           # Computer AI
-          if feedback.last && possible_values.size < code_length
-            feedback.last.values.sum.times { possible_values.push(last_attempted_index) }
-          end
-          code = if possible_values.size == code_length
-                   possible_values.shuffle
-                 elsif last_attempted_index < Code::COLORS.size - 1
-                   self.last_attempted_index += 1
-                   Array.new(code_length, Code::COLORS[last_attempted_index])
-                 else
-                   Code.random_code
-                 end
-          p possible_values
+          populate_possible_values(feedback, code_length)
+          code = computer_generate_code(code_length)
+          Loggable.logger.debug "Possible values: #{possible_values}"
           code
         end
       attempts.push(attempt)
-      puts "#{player.name} guessed #{attempt}"
+      Loggable.logger.info "#{player.name} guessed #{attempt}"
       attempt
     end
 
     private
 
     attr_writer :attempts
-    attr_accessor :possible_values, :last_attempted_index
+    attr_accessor :possible_values, :last_attempted_index, :fail_guess
+
+    def populate_possible_values(feedback, code_length)
+      return unless feedback.last && possible_values.size < code_length
+
+      feedback.last.values.sum.times do
+        possible_values.push(last_attempted_index)
+      end
+      # Sets a guess that is guaranteed to fail
+      set_fail_guess if possible_values.size == code_length
+    end
+
+    def computer_generate_code(code_length)
+      if possible_values.size == code_length
+        possible_values.shuffle
+      elsif last_attempted_index < Code::COLORS.size - 1
+        self.last_attempted_index += 1
+        Array.new(code_length, Code::COLORS[last_attempted_index])
+      else
+        Code.random_code
+      end
+    end
+
+    def set_fail_guess
+      self.fail_guess = Code::COLORS.find { |x| !possible_values.include? x }
+    end
   end
 end
 
@@ -207,23 +242,22 @@ class Game
     self.players = players
   end
 
-  def play(max_attempts = 12)
+  def play(max_attempts = 1000)
     codemaker, codebreaker = assign_roles
     codemaker.create_code
     attempts = max_attempts
     while attempts.positive?
       attempts -= 1
       attempt = codemaker.verify(codebreaker.attempt(codemaker.all_feedback))
-      p attempt[:feedback].values unless attempt[:success]
+      Loggable.logger.debug attempt[:feedback].values unless attempt[:success]
       if attempt[:success]
-        print "\nSuccess! "
+        Loggable.logger.info "\nSuccess!"
         break
       end
-      print "\nFailure! " if attempts.zero?
+      Loggable.logger.info "\nFailure!" if attempts.zero?
     end
-    puts "#{codemaker}'s code was #{codemaker.code}. #{codebreaker} took #{codebreaker.attempts.size} attempts."
-    # p codebreaker.attempts
-    # puts codemaker.all_feedback
+    Loggable.logger.info "#{codemaker}'s code was #{codemaker.code}. #{codebreaker} took #{codebreaker.attempts.size} attempts."
+    codebreaker.attempts.size
   end
 
   private
@@ -235,4 +269,8 @@ class Game
   attr_writer :players
 end
 
-Game.new.play
+# Loggable.logger.level = :warn
+
+# puts 50000.times.map {
+#   Game.new.play
+# }.sum/50000.0
