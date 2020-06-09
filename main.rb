@@ -20,7 +20,7 @@ Loggable.logger.formatter = proc { |severity, _, _, msg|
 class Player
   attr_reader :name, :type
 
-  def initialize(name = 'Anonymous', type = 'Player')
+  def initialize(name = "Anonymous #{rand(1000)}", type = 'Player')
     self.name = name
     self.type = type
   end
@@ -38,7 +38,7 @@ class Player
   attr_writer :name, :type
 end
 
-# Represents a code
+# Represents a code of 4 digits from 0 - 5 inclusive
 module Code
   COLORS = Array(0..5)
 
@@ -95,7 +95,6 @@ module Roles
         Loggable.logger.info "Enter a code (#{code_length} digit number with digits between #{Code::COLORS.min} - #{Code::COLORS.max}): "
         code = STDIN.noecho(&:gets).chomp
         if /^ *[#{Code::COLORS.min}-#{Code::COLORS.max}]{#{code_length}} *$/.match?(code)
-          Loggable.logger.info
           return code.split('').map(&:to_i)
         else
           Loggable.logger.info "Wrong format! Try again. Your code was #{code}"
@@ -179,20 +178,23 @@ module Roles
       self.attempts = []
       self.possible_values = []
       self.last_attempted_index = -1
+      self.confidence_index = -1
+      # free_indexes[0] = keeps track of indexes used for current values
+      # free_indexes[1] = keeps track of which indexes are not taken
+      self.trial_index = 0
     end
 
     def attempt(feedback = [], code_length = 4)
-      Loggable.logger.info
       attempt =
         case player.type
         when 'Player'
           # Player input
-          puts "#{player.name} needs to input an attempt."
+          Loggable.logger.info "#{player.name} needs to input an attempt."
           code_input(code_length)
         else
           # Computer AI
           populate_possible_values(feedback, code_length)
-          code = computer_generate_code(code_length)
+          code = computer_generate_code(feedback, code_length)
           Loggable.logger.debug "Possible values: #{possible_values}"
           code
         end
@@ -204,10 +206,10 @@ module Roles
     private
 
     attr_writer :attempts
-    attr_accessor :possible_values, :last_attempted_index, :fail_guess
+    attr_accessor :possible_values, :last_attempted_index, :fail_guess, :confidence_index, :trial_index, :code_permutations
 
     def populate_possible_values(feedback, code_length)
-      return unless feedback.last && possible_values.size < code_length
+      return unless (feedback.last && possible_values.size < code_length) && confidence_index.negative?
 
       feedback.last.values.sum.times do
         possible_values.push(last_attempted_index)
@@ -216,9 +218,10 @@ module Roles
       set_fail_guess if possible_values.size == code_length
     end
 
-    def computer_generate_code(code_length)
-      if possible_values.size == code_length
-        possible_values.shuffle
+    def computer_generate_code(feedback, code_length)
+      if possible_values.size == code_length || confidence_index.positive?
+        permute_code(feedback, code_length)
+        # possible_values.shuffle!
       elsif last_attempted_index < Code::COLORS.size - 1
         self.last_attempted_index += 1
         Array.new(code_length, Code::COLORS[last_attempted_index])
@@ -229,6 +232,28 @@ module Roles
 
     def set_fail_guess
       self.fail_guess = Code::COLORS.find { |x| !possible_values.include? x }
+    end
+
+    def permute_code(feedback, code_length)
+      Loggable.logger.debug "confidence_index #{confidence_index}, Trial_index #{trial_index}"
+      if confidence_index == -1
+        possible_values.shuffle!
+        self.confidence_index = 0
+        attempt = Array.new(code_length, fail_guess)
+        attempt[trial_index] = possible_values[confidence_index]
+        self.confidence_index += 1
+        attempt
+      else
+        last_attempt = attempts.last.clone
+        if feedback.last[:matches] > trial_index
+          possible_values.delete_at(possible_values.index(last_attempt[trial_index]))
+          self.trial_index += 1
+          self.confidence_index = 0
+        end
+        last_attempt[trial_index] = possible_values[confidence_index]
+        self.confidence_index += 1
+        last_attempt
+      end
     end
   end
 end
@@ -242,19 +267,21 @@ class Game
     self.players = players
   end
 
-  def play(max_attempts = 1000)
+  def play(max_attempts = 12)
     codemaker, codebreaker = assign_roles
     codemaker.create_code
     attempts = max_attempts
     while attempts.positive?
+      Loggable.logger.info
+      Loggable.logger.info "#{attempts} attempts left."
       attempts -= 1
       attempt = codemaker.verify(codebreaker.attempt(codemaker.all_feedback))
       Loggable.logger.debug attempt[:feedback].values unless attempt[:success]
       if attempt[:success]
-        Loggable.logger.info "\nSuccess!"
+        Loggable.logger.info 'Success!'
         break
       end
-      Loggable.logger.info "\nFailure!" if attempts.zero?
+      Loggable.logger.info 'Failure!' if attempts.zero?
     end
     Loggable.logger.info "#{codemaker}'s code was #{codemaker.code}. #{codebreaker} took #{codebreaker.attempts.size} attempts."
     codebreaker.attempts.size
@@ -269,8 +296,24 @@ class Game
   attr_writer :players
 end
 
-# Loggable.logger.level = :warn
+Loggable.logger.level = :warn
 
-# puts 50000.times.map {
+# game = Game.new
+# game.play
+
+# # Max attempts
+# puts 50_00.times.map {
 #   Game.new.play
-# }.sum/50000.0
+# }.max
+
+# # Average attempts taken
+# puts 50_00.times.map {
+#   Game.new.play
+# }.sum/50_00.0
+
+# # Win rate
+# results = 50_00.times.map {
+#   Game.new.play
+# }.group_by {|x| x == 24}.map {|k, v| [k, v.size]}.to_h
+
+# puts results[false].to_f / results.values.sum
